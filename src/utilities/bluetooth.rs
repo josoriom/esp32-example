@@ -9,7 +9,7 @@ use bleps::{
 use esp_backtrace as _;
 use esp_println::println;
 use esp_wifi::{ble::controller::BleConnector, initialize, EspWifiInitFor};
-use hal::{clock::ClockControl, peripherals::*, prelude::*, Rng, IO};
+use hal::{clock::ClockControl, peripherals::Peripherals, prelude::*, Delay, Rng, IO};
 
 #[global_allocator]
 static ALLOCATOR: esp_alloc::EspHeap = esp_alloc::EspHeap::empty();
@@ -17,6 +17,10 @@ static ALLOCATOR: esp_alloc::EspHeap = esp_alloc::EspHeap::empty();
 pub fn connection(peripherals: Peripherals, name: &str) -> ! {
     let system = peripherals.SYSTEM.split();
     let clocks = ClockControl::max(system.clock_control).freeze();
+    let mut delay = Delay::new(&clocks);
+    let pins = IO::new(peripherals.GPIO, peripherals.IO_MUX).pins;
+    let mut button = pins.gpio0.into_pull_down_input();
+    let mut led = pins.gpio2.into_push_pull_output();
 
     let timer = hal::timer::TimerGroup::new(peripherals.TIMG1, &clocks).timer0;
     let init = initialize(
@@ -28,16 +32,13 @@ pub fn connection(peripherals: Peripherals, name: &str) -> ! {
     )
     .unwrap();
 
-    let io = IO::new(peripherals.GPIO, peripherals.IO_MUX);
-
-    let button = io.pins.gpio0.into_pull_down_input();
-
     let mut bluetooth = peripherals.BT;
 
     let connector = BleConnector::new(&init, &mut bluetooth);
     let hci: HciConnector<BleConnector<'_>> =
         HciConnector::new(connector, esp_wifi::current_millis);
     let mut debounce_cnt = 500;
+
     loop {
         let mut ble = Ble::new(&hci);
         println!("{:?}", ble.init());
@@ -57,45 +58,24 @@ pub fn connection(peripherals: Peripherals, name: &str) -> ! {
         println!("{:?}", name);
         println!("started advertising");
         let mut rf = |_offset: usize, data: &mut [u8]| {
-            data[..20].copy_from_slice(&b"Hello Bare-Metal BLE"[..]);
-            17
+            data[..5].copy_from_slice(&b"Hello!"[..]);
+            5
         };
         let mut wf = |offset: usize, data: &[u8]| {
             println!("RECEIVED: {} {:?}", offset, data);
+            led.toggle();
         };
 
-        let mut wf2 = |offset: usize, data: &[u8]| {
-            println!("RECEIVED: {} {:?}", offset, data);
-        };
-
-        let mut rf3 = |_offset: usize, data: &mut [u8]| {
-            data[..5].copy_from_slice(&b"Hola!"[..]);
-            5
-        };
-        let mut wf3 = |offset: usize, data: &[u8]| {
-            println!("RECEIVED: Offset {}, data {:?}", offset, data);
-        };
         #[allow(non_upper_case_globals)]
         gatt!([service {
             uuid: "937312e0-2354-11eb-9f10-fbc30a62cf38",
-            characteristics: [
-                characteristic {
-                    uuid: "937312e0-2354-11eb-9f10-fbc30a62cf38",
-                    read: rf,
-                    write: wf,
-                },
-                characteristic {
-                    uuid: "957312e0-2354-11eb-9f10-fbc30a62cf38",
-                    write: wf2,
-                },
-                characteristic {
-                    name: "my_characteristic",
-                    uuid: "987312e0-2354-11eb-9f10-fbc30a62cf38",
-                    notify: true,
-                    read: rf3,
-                    write: wf3,
-                },
-            ],
+            characteristics: [characteristic {
+                name: "my_characteristic",
+                uuid: "957312e0-2354-11eb-9f10-fbc30a62cf40",
+                read: rf,
+                write: wf,
+                notify: true,
+            }],
         }]);
 
         let mut srv = AttributeServer::new(&mut ble, &mut gatt_attributes);
@@ -139,6 +119,7 @@ pub fn connection(peripherals: Peripherals, name: &str) -> ! {
                     println!("{:?}", err);
                 }
             }
+            delay.delay_ms(1000u32);
         }
     }
 }
