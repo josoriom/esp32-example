@@ -3,7 +3,7 @@
 #![feature(type_alias_impl_trait)]
 #![feature(async_closure)]
 
-use hal::{peripherals::*, prelude::*};
+use esp32_hal::{peripherals::*, prelude::*};
 
 mod utilities {
     pub mod bluetooth;

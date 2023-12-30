@@ -6,10 +6,10 @@ use bleps::{
     gatt, Ble, HciConnector,
 };
 
+use esp32_hal::{clock::ClockControl, peripherals::Peripherals, prelude::*, Delay, Rng, IO};
 use esp_backtrace as _;
 use esp_println::println;
 use esp_wifi::{ble::controller::BleConnector, initialize, EspWifiInitFor};
-use hal::{clock::ClockControl, peripherals::Peripherals, prelude::*, Delay, Rng, IO};
 
 #[global_allocator]
 static ALLOCATOR: esp_alloc::EspHeap = esp_alloc::EspHeap::empty();
@@ -22,7 +22,7 @@ pub fn connection(peripherals: Peripherals, name: &str) -> ! {
     let mut button = pins.gpio0.into_pull_down_input();
     let mut led = pins.gpio2.into_push_pull_output();
 
-    let timer = hal::timer::TimerGroup::new(peripherals.TIMG1, &clocks).timer0;
+    let timer = esp32_hal::timer::TimerGroup::new(peripherals.TIMG1, &clocks).timer0;
     let init = initialize(
         EspWifiInitFor::Ble,
         timer,
