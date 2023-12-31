@@ -1,18 +1,28 @@
+
+[alias]
+esp32 = "run --features esp32 --target xtensa-esp32-none-elf --features esp32-hal/default,esp32-hal/embassy-time-timg0,esp32-hal/embassy-executor-thread,async,ble"
+besp32 = "build --features esp32 --target xtensa-esp32-none-elf --features esp32-hal/default,esp32-hal/embassy-time-timg0,esp32-hal/embassy-executor-thread"
+main = "run src/main.rs --features esp32 --target xtensa-esp32-none-elf --features esp32-hal/default,esp32-hal/embassy-time-timg0,esp32-hal/embassy-executor-thread,async,ble"
+
+
 [target.xtensa-esp32-none-elf]
 runner = "espflash flash --monitor"
+rustflags = ["-C", "link-arg=-Tlinkall.x", "-C", "link-arg=-Trom_functions.x"]
+
+[build]
+rustflags = [
+  "-C",
+  "link-arg=-Tlinkall.x",
+  "-C",
+  "link-arg=-Trom_functions.x",
+  "-C",
+  "link-arg=-nostartfiles",
+]
 
 
 [env]
-ESP_LOGLEVEL="INFO"
-[build]
-rustflags = [
-  "-C", "link-arg=-Tlinkall.x",
-"-C", "link-arg=-Trom_functions.x",
-
-  "-C", "link-arg=-nostartfiles",
-]
-
-target = "xtensa-esp32-none-elf"
+ESP_LOGLEVEL = "INFO"
 
 [unstable]
 build-std = ["alloc", "core"]
+target = "xtensa-esp32-none-elf"
