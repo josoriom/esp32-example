@@ -1,4 +1,7 @@
 {
     "rust-analyzer.checkOnSave.allTargets": false,
+    "rust-analyzer.cargo.features": ["esp32", "embedded-svc"],
+    "rust-analyzer.cargo.target": "xtensa-esp32-none-elf",
+    "rust-analyzer.procMacro.enable": false,
     "editor.indentSize": 2
 }

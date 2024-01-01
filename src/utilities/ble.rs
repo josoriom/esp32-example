@@ -66,7 +66,6 @@ pub fn connection(peripherals: Peripherals, name: &str) -> ! {
             led.toggle();
         };
 
-        #[allow(non_upper_case_globals)]
         gatt!([service {
             uuid: "937312e0-2354-11eb-9f10-fbc30a62cf38",
             characteristics: [characteristic {

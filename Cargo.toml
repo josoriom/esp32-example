@@ -9,10 +9,6 @@ license = "MIT"
 opt-level = 3
 debug = true
 
-[[example]]
-name = "debug"
-path = "src/debug.rs"
-
 [dependencies]
 defmt = { version = "=0.3.5", optional = true }
 esp32-hal = { version = "0.17.0", features = [

@@ -6,9 +6,9 @@
 use esp32_hal::{peripherals::*, prelude::*};
 
 mod utilities {
-    pub mod bluetooth;
+    pub mod ble;
 }
-use utilities::bluetooth::connection;
+use utilities::ble::connection;
 
 #[entry]
 fn main() -> ! {
