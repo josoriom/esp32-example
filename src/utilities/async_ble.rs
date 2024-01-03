@@ -1,9 +1,4 @@
-#![no_std]
-#![no_main]
-#![feature(type_alias_impl_trait)]
-#![feature(async_closure)]
-
-use core::{cell::RefCell, pin::Pin};
+use core::cell::RefCell;
 
 use bleps::{
     ad_structure::{
@@ -14,29 +9,48 @@ use bleps::{
     attribute_server::NotificationData,
     gatt,
 };
-use embassy_executor::Spawner;
+use embedded_hal_async::digital::Wait;
 use esp_backtrace as _;
 use esp_println::println;
-use esp_wifi::{
-    ble::controller::asynch::BleConnector, initialize, EspWifiInitFor, EspWifiInitialization,
-};
+use esp_wifi::{ble::controller::asynch::BleConnector, EspWifiInitialization};
 
-use esp32_hal as hal;
-use hal::{
-    clock::ClockControl, embassy, peripheral::Peripheral, peripherals::*, prelude::*,
-    timer::TimerGroup, Rng, IO,
-};
+use esp32_hal::{clock::Clocks, embassy, peripherals::*, prelude::*, timer::TimerGroup, IO};
 
 pub async fn connection(
-    device_name: &str,
     init: EspWifiInitialization,
     mut bluetooth: BT,
-    pins: esp32_hal::gpio::Pins,
+    io: IO,
+    clocks: Clocks<'_>,
+    timg0: TIMG0,
 ) -> ! {
-    let connector = BleConnector::new(&init, &mut bluetooth);
-    println!("Connector created");
-    let mut ble = Ble::new(connector, esp_wifi::current_millis);
+    let pins = io.pins;
+    #[cfg(any(feature = "esp32", feature = "esp32s2", feature = "esp32s3"))]
     let mut led = pins.gpio2.into_push_pull_output();
+    let button = pins.gpio0.into_pull_down_input();
+    #[cfg(any(
+        feature = "esp32c2",
+        feature = "esp32c3",
+        feature = "esp32c6",
+        feature = "esp32h2"
+    ))]
+    let button = pins.gpio9.into_pull_down_input();
+
+    // Async requires the GPIO interrupt to wake futures
+    esp32_hal::interrupt::enable(
+        esp32_hal::peripherals::Interrupt::GPIO,
+        esp32_hal::interrupt::Priority::Priority1,
+    )
+    .unwrap();
+
+    let timer_group0 = TimerGroup::new(timg0, &clocks);
+    embassy::init(&clocks, timer_group0.timer0);
+
+    let connector = BleConnector::new(&init, &mut bluetooth);
+    let mut ble: Ble<_> = Ble::new(connector, esp_wifi::current_millis);
+    println!("Connector created");
+
+    let pin_ref = RefCell::new(button);
+
     loop {
         println!("{:?}", ble.init().await);
         println!("{:?}", ble.cmd_set_le_advertising_parameters().await);
@@ -46,7 +60,7 @@ pub async fn connection(
                 create_advertising_data(&[
                     AdStructure::Flags(LE_GENERAL_DISCOVERABLE | BR_EDR_NOT_SUPPORTED),
                     AdStructure::ServiceUuids16(&[Uuid::Uuid16(0x1809)]),
-                    AdStructure::CompleteLocalName(device_name),
+                    AdStructure::CompleteLocalName("ESP32"),
                 ])
                 .unwrap()
             )
@@ -62,7 +76,7 @@ pub async fn connection(
         };
         let mut wf = |offset: usize, data: &[u8]| {
             println!("RECEIVED: {} {:?}", offset, data);
-            led.toggle();
+            let _ = led.toggle();
         };
 
         gatt!([service {
@@ -80,9 +94,7 @@ pub async fn connection(
 
         let counter = RefCell::new(0u8);
         let mut notifier = async || {
-            // TODO how to check if notifications are enabled for the characteristic?
-            // maybe pass something into the closure which just can query the characterisic value
-            // probably passing in the attribute server won't work?
+            pin_ref.borrow_mut().wait_for_rising_edge().await.unwrap();
             let mut data = [0u8; 13];
             data.copy_from_slice(b"Notification0");
             {
@@ -92,7 +104,6 @@ pub async fn connection(
             }
             NotificationData::new(my_characteristic_handle, &data)
         };
-
         srv.run(&mut notifier).await.unwrap();
     }
 }

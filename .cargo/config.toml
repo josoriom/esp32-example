@@ -2,7 +2,6 @@
 esp32 = "run --features esp32 --target xtensa-esp32-none-elf --features esp32-hal/default,esp32-hal/embassy-time-timg0,esp32-hal/embassy-executor-thread"
 besp32 = "build --features esp32 --target xtensa-esp32-none-elf --features esp32-hal/default,esp32-hal/embassy-time-timg0,esp32-hal/embassy-executor-thread"
 run-main = "run --features esp32,async,ble --target xtensa-esp32-none-elf --features esp32-hal/default,esp32-hal/embassy-time-timg0,esp32-hal/embassy-executor-thread"
-run-async = "run src/debug.rs --features esp32,async,ble --target xtensa-esp32-none-elf --features esp32-hal/default,esp32-hal/embassy-time-timg0,esp32-hal/embassy-executor-thread"
 
 [target.xtensa-esp32-none-elf]
 runner = "espflash flash --monitor"
