@@ -18,7 +18,7 @@ rustflags = [
   "link-arg=-nostartfiles",
 ]
 
+target = "xtensa-esp32-none-elf"
 
 [unstable]
 build-std = ["alloc", "core"]
-target = "xtensa-esp32-none-elf"

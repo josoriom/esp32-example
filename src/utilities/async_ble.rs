@@ -3,7 +3,7 @@
 #![feature(type_alias_impl_trait)]
 #![feature(async_closure)]
 
-use core::cell::RefCell;
+use core::{cell::RefCell, pin::Pin};
 
 use bleps::{
     ad_structure::{
@@ -14,52 +14,29 @@ use bleps::{
     attribute_server::NotificationData,
     gatt,
 };
-
 use embassy_executor::Spawner;
-use embedded_hal_async::digital::Wait;
-use esp32_hal as hal;
 use esp_backtrace as _;
 use esp_println::println;
-use esp_wifi::{ble::controller::asynch::BleConnector, initialize, EspWifiInitFor};
-use hal::{clock::ClockControl, embassy, peripherals::*, prelude::*, timer::TimerGroup, Rng, IO};
-pub async fn connection(peripherals: Peripherals, name: &str) -> ! {
-    let system = peripherals.SYSTEM.split();
-    let clocks = ClockControl::max(system.clock_control).freeze();
+use esp_wifi::{
+    ble::controller::asynch::BleConnector, initialize, EspWifiInitFor, EspWifiInitialization,
+};
 
-    #[cfg(target_arch = "xtensa")]
-    let timer = hal::timer::TimerGroup::new(peripherals.TIMG1, &clocks).timer0;
-    #[cfg(target_arch = "riscv32")]
-    let timer = hal::systimer::SystemTimer::new(peripherals.SYSTIMER).alarm0;
-    let init = initialize(
-        EspWifiInitFor::Ble,
-        timer,
-        Rng::new(peripherals.RNG),
-        system.radio_clock_control,
-        &clocks,
-    )
-    .unwrap();
+use esp32_hal as hal;
+use hal::{
+    clock::ClockControl, embassy, peripheral::Peripheral, peripherals::*, prelude::*,
+    timer::TimerGroup, Rng, IO,
+};
 
-    let io = IO::new(peripherals.GPIO, peripherals.IO_MUX);
-    let button = io.pins.gpio0.into_pull_down_input();
-
-    // Async requires the GPIO interrupt to wake futures
-    hal::interrupt::enable(
-        hal::peripherals::Interrupt::GPIO,
-        hal::interrupt::Priority::Priority1,
-    )
-    .unwrap();
-
-    let timer_group0 = TimerGroup::new(peripherals.TIMG0, &clocks);
-    embassy::init(&clocks, timer_group0.timer0);
-
-    let mut bluetooth = peripherals.BT;
-
+pub async fn connection(
+    device_name: &str,
+    init: EspWifiInitialization,
+    mut bluetooth: BT,
+    pins: esp32_hal::gpio::Pins,
+) -> ! {
     let connector = BleConnector::new(&init, &mut bluetooth);
-    let mut ble = Ble::new(connector, esp_wifi::current_millis);
     println!("Connector created");
-
-    let pin_ref = RefCell::new(button);
-
+    let mut ble = Ble::new(connector, esp_wifi::current_millis);
+    let mut led = pins.gpio2.into_push_pull_output();
     loop {
         println!("{:?}", ble.init().await);
         println!("{:?}", ble.cmd_set_le_advertising_parameters().await);
@@ -69,7 +46,7 @@ pub async fn connection(peripherals: Peripherals, name: &str) -> ! {
                 create_advertising_data(&[
                     AdStructure::Flags(LE_GENERAL_DISCOVERABLE | BR_EDR_NOT_SUPPORTED),
                     AdStructure::ServiceUuids16(&[Uuid::Uuid16(0x1809)]),
-                    AdStructure::CompleteLocalName(name),
+                    AdStructure::CompleteLocalName(device_name),
                 ])
                 .unwrap()
             )
@@ -80,46 +57,24 @@ pub async fn connection(peripherals: Peripherals, name: &str) -> ! {
         println!("started advertising");
 
         let mut rf = |_offset: usize, data: &mut [u8]| {
-            data[..20].copy_from_slice(&b"Hello Bare-Metal BLE"[..]);
-            17
+            data[..5].copy_from_slice(&b"Hello!"[..]);
+            5
         };
         let mut wf = |offset: usize, data: &[u8]| {
             println!("RECEIVED: {} {:?}", offset, data);
-        };
-
-        let mut wf2 = |offset: usize, data: &[u8]| {
-            println!("RECEIVED: {} {:?}", offset, data);
-        };
-
-        let mut rf3 = |_offset: usize, data: &mut [u8]| {
-            data[..5].copy_from_slice(&b"Hola!"[..]);
-            5
-        };
-        let mut wf3 = |offset: usize, data: &[u8]| {
-            println!("RECEIVED: Offset {}, data {:?}", offset, data);
+            led.toggle();
         };
 
         gatt!([service {
             uuid: "937312e0-2354-11eb-9f10-fbc30a62cf38",
-            characteristics: [
-                characteristic {
-                    uuid: "937312e0-2354-11eb-9f10-fbc30a62cf38",
-                    read: rf,
-                    write: wf,
-                },
-                characteristic {
-                    uuid: "957312e0-2354-11eb-9f10-fbc30a62cf38",
-                    write: wf2,
-                },
-                characteristic {
-                    name: "my_characteristic",
-                    uuid: "987312e0-2354-11eb-9f10-fbc30a62cf38",
-                    notify: true,
-                    read: rf3,
-                    write: wf3,
-                },
-            ],
-        },]);
+            characteristics: [characteristic {
+                name: "my_characteristic",
+                uuid: "957312e0-2354-11eb-9f10-fbc30a62cf40",
+                read: rf,
+                write: wf,
+                notify: true,
+            }],
+        }]);
 
         let mut srv = AttributeServer::new(&mut ble, &mut gatt_attributes);
 
@@ -128,7 +83,6 @@ pub async fn connection(peripherals: Peripherals, name: &str) -> ! {
             // TODO how to check if notifications are enabled for the characteristic?
             // maybe pass something into the closure which just can query the characterisic value
             // probably passing in the attribute server won't work?
-            pin_ref.borrow_mut().wait_for_rising_edge().await.unwrap();
             let mut data = [0u8; 13];
             data.copy_from_slice(b"Notification0");
             {
